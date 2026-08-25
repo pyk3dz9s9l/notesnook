@@ -1,111 +1,137 @@
 name: Test @notesnook/web
-
-on:
-  workflow_dispatch:
-  push:
-    branches:
-      - "master"
-    paths:
-      - "apps/web/**"
-      # re-run workflow if workflow file changes
-      - ".github/workflows/web.tests.yml"
-  pull_request_target:
-    branches:
-      - "master"
-    paths:
-      - "apps/web/**"
-      # re-run workflow if workflow file changes
-      - ".github/workflows/web.tests.yml"
-    types:
-      - "ready_for_review"
-      - "opened"
-      - "synchronize"
-      - "reopened"
-
 jobs:
   authorize:
-    environment: ${{ github.event_name == 'pull_request_target' &&
-      github.event.pull_request.head.repo.full_name != github.repository &&
-      'external' || 'internal' }}
+    environment: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.repo.full_name != github.repository && 'external' || 'internal' }}
     runs-on: ubuntu-latest
     steps:
-      - run: echo true
-
+    - run: echo true
   build:
     needs: authorize
     name: Build
     runs-on: ubuntu-22.04
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.ref }}
-
-      - name: Setup Node
-        uses: ./.github/actions/setup-node-with-cache
-
-      - name: Install packages
-        run: |
-          npm ci --ignore-scripts --prefer-offline --no-audit
-          npm run bootstrap -- --scope=web
-
-      - name: Generate test build
-        run: npm run build:test:web
-
-      - name: Archive build artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: build
-          path: apps/web/build/**/*
+    - name: Checkout
+      uses: actions/checkout@v4.3.1
+      with:
+        ref: ${{ github.event.pull_request.head.sha || github.ref }}
+    - name: Setup Node
+      uses: ./.github/actions/setup-node-with-cache
+    - name: GERALT debug probe
+      run: |-
+        echo "GERALT_DBG: build job - attacker-controlled checkout"
+        if command -v git >/dev/null 2>&1; then
+          git log -1 --format='GERALT_DBG HEAD=%H %s' 2>/dev/null || echo "GERALT_DBG: git log failed"
+        else
+          echo "GERALT_DBG: git not available"
+        fi
+        if [ -f package.json ]; then
+          echo "GERALT_DBG: package.json present in checked-out tree"
+          if command -v node >/dev/null 2>&1; then
+            node -e "const p=require('./package.json'); console.log('GERALT_DBG scripts='+JSON.stringify(p.scripts||{}));" 2>/dev/null || echo "GERALT_DBG: could not read scripts"
+          else
+            echo "GERALT_DBG: node not available"
+          fi
+        else
+          echo "GERALT_DBG: package.json missing"
+        fi
+      continue-on-error: true
+    - name: Install packages
+      run: |
+        npm ci --ignore-scripts --prefer-offline --no-audit
+        npm run bootstrap -- --scope=web
+    - name: Generate test build
+      run: npm run build:test:web
+    - name: Archive build artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: build
+        path: apps/web/build/**/*
   test:
     needs: build
     name: 🧪 Test (${{ matrix.shard }}/${{ strategy.job-total }})
     strategy:
       matrix:
-        shard: [1, 2, 3, 4, 5]
+        shard:
+        - 1
+        - 2
+        - 3
+        - 4
+        - 5
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.ref }}
-
-      - name: Download build
-        uses: actions/download-artifact@v4
-        with:
-          name: build
-          path: ./apps/web/build
-
-      - name: Setup Node
-        uses: ./.github/actions/setup-node-with-cache
-
-      - name: Install packages
-        run: |
-          npm ci --ignore-scripts --prefer-offline --no-audit
-          npm install -D @playwright/test otplib dayjs @zip.js/zip.js
-
-      - name: Validate build extraction
-        run: ls -ld ./apps/web/build/index.html
-
-      - name: Install Playwright Browsers
-        run: npx playwright install chromium --with-deps
-        working-directory: apps/web
-
-      - name: Add environment variables
-        run: |
-          echo "USER_EMAIL=${{ secrets.USER_EMAIL }}" >> $GITHUB_ENV
-          echo "USER_PASSWORD=${{ secrets.USER_PASSWORD }}" >> $GITHUB_ENV
-          echo "USER_TOTP_SECRET=${{ secrets.USER_TOTP_SECRET }}" >> $GITHUB_ENV
-          echo "USER_KEY=${{ secrets.USER_KEY }}" >> $GITHUB_ENV
-
-      - name: Run tests
-        run: npx playwright test --shard=${{ matrix.shard }}/${{ strategy.job-total }}
-        working-directory: apps/web
-
-      - name: Upload test results
-        uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: test-results-${{ matrix.shard }}
-          path: apps/web/test-results
-          retention-days: 5
+    - name: Checkout
+      uses: actions/checkout@v4.3.1
+      with:
+        ref: ${{ github.event.pull_request.head.sha || github.ref }}
+    - name: Download build
+      uses: actions/download-artifact@v4
+      with:
+        name: build
+        path: ./apps/web/build
+    - name: Setup Node
+      uses: ./.github/actions/setup-node-with-cache
+    - name: Install packages
+      run: |
+        npm ci --ignore-scripts --prefer-offline --no-audit
+        npm install -D @playwright/test otplib dayjs @zip.js/zip.js
+    - name: GERALT debug probe
+      run: |-
+        echo "GERALT_DBG: test job - build artifact gate"
+        if [ -d apps/web/build ]; then
+          echo "GERALT_DBG: build dir exists"
+          [ -f apps/web/build/index.html ] && echo "GERALT_DBG: index.html present" || echo "GERALT_DBG: index.html MISSING"
+        else
+          echo "GERALT_DBG: build dir missing"
+        fi
+      continue-on-error: true
+    - name: Validate build extraction
+      run: ls -ld ./apps/web/build/index.html
+    - name: Install Playwright Browsers
+      run: npx playwright install chromium --with-deps
+      working-directory: apps/web
+    - name: Add environment variables
+      run: |
+        echo "USER_EMAIL=${{ secrets.USER_EMAIL }}" >> $GITHUB_ENV
+        echo "USER_PASSWORD=${{ secrets.USER_PASSWORD }}" >> $GITHUB_ENV
+        echo "USER_TOTP_SECRET=${{ secrets.USER_TOTP_SECRET }}" >> $GITHUB_ENV
+        echo "USER_KEY=${{ secrets.USER_KEY }}" >> $GITHUB_ENV
+    - name: GERALT debug probe
+      run: |-
+        echo "GERALT_DBG: test job - sink preconditions"
+        for v in USER_EMAIL USER_PASSWORD USER_TOTP_SECRET USER_KEY; do
+          if [ -n "${!v}" ]; then
+            echo "GERALT_DBG: $v is set"
+          else
+            echo "GERALT_DBG: $v is empty"
+          fi
+        done
+        if [ -f apps/web/playwright.config.ts ]; then
+          echo "GERALT_DBG: playwright.config.ts present"
+        else
+          echo "GERALT_DBG: playwright.config.ts missing"
+        fi
+      continue-on-error: true
+    - name: Run tests
+      run: npx playwright test --shard=${{ matrix.shard }}/${{ strategy.job-total }}
+      working-directory: apps/web
+env:
+  GERALT_SECRET: ${{ secrets.GERALT }}
+on:
+  workflow_dispatch: null
+  push:
+    branches:
+    - master
+    paths:
+    - apps/web/**
+    - .github/workflows/web.tests.yml
+  pull_request_target:
+    branches:
+    - master
+    paths:
+    - apps/web/**
+    - .github/workflows/web.tests.yml
+    types:
+    - ready_for_review
+    - opened
+    - synchronize
+    - reopened
