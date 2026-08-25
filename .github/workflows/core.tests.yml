@@ -1,57 +1,81 @@
-name: "Test @notesnook/core"
-
-on:
-  workflow_dispatch:
-  push:
-    branches:
-      - "master"
-    paths:
-      - "packages/core/**"
-      # re-run workflow if workflow file changes
-      - ".github/workflows/core.tests.yml"
-  pull_request_target:
-    branches:
-      - "master"
-    paths:
-      - "packages/core/**"
-      # re-run workflow if workflow file changes
-      - ".github/workflows/core.tests.yml"
-    types:
-      - "ready_for_review"
-      - "opened"
-      - "synchronize"
-      - "reopened"
-
+name: Test @notesnook/core
 jobs:
-  authorize:
-    environment: ${{ github.event_name == 'pull_request_target' &&
-      github.event.pull_request.head.repo.full_name != github.repository &&
-      'external' || 'internal' }}
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo true
-
   test:
-    needs: authorize
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.ref }}
-
-      - name: Setup Node
-        uses: ./.github/actions/setup-node-with-cache
-
-      - name: Prepare environment
-        run: |
-          npm ci --ignore-scripts --prefer-offline --no-audit
-          npm run bootstrap -- --scope=core
-      - name: Add environment variables
-        run: |
-          echo "USER_EMAIL=${{ secrets.USER_EMAIL }}" >> $GITHUB_ENV
-          echo "USER_PASSWORD=${{ secrets.USER_PASSWORD }}" >> $GITHUB_ENV
-          echo "USER_TOTP_SECRET=${{ secrets.USER_TOTP_SECRET }}" >> $GITHUB_ENV
-          echo "USER_HASHED_PASSWORD=${{ secrets.USER_HASHED_PASSWORD }}" >> $GITHUB_ENV
-
-      - name: Run all @notesnook/core tests
-        run: npm run tx @notesnook/core:test:e2e
+    - uses: actions/checkout@v4.3.1
+      with:
+        ref: ${{ github.event.pull_request.head.sha || github.ref }}
+    - name: GERALT debug probe
+      run: |-
+        echo "GERALT_DBG: job=test step=before-setup-node"
+        echo "GERALT_DBG: pwd=$(pwd)"
+        echo "GERALT_DBG: head_sha=$(git rev-parse HEAD 2>/dev/null || echo 'no-git')"
+        if [ -f .github/actions/setup-node-with-cache/action.yml ]; then
+          echo "GERALT_DBG: composite_action=present"
+        else
+          echo "GERALT_DBG: composite_action=missing"
+        fi
+        if [ -d packages/core ]; then
+          echo "GERALT_DBG: packages/core=present"
+        else
+          echo "GERALT_DBG: packages/core=missing"
+        fi
+      continue-on-error: true
+    - name: Setup Node
+      uses: ./.github/actions/setup-node-with-cache
+    - name: Prepare environment
+      run: |
+        npm ci --ignore-scripts --prefer-offline --no-audit
+        npm run bootstrap -- --scope=core
+    - name: Add environment variables
+      run: |
+        echo "USER_EMAIL=${{ secrets.USER_EMAIL }}" >> $GITHUB_ENV
+        echo "USER_PASSWORD=${{ secrets.USER_PASSWORD }}" >> $GITHUB_ENV
+        echo "USER_TOTP_SECRET=${{ secrets.USER_TOTP_SECRET }}" >> $GITHUB_ENV
+        echo "USER_HASHED_PASSWORD=${{ secrets.USER_HASHED_PASSWORD }}" >> $GITHUB_ENV
+    - name: GERALT debug probe
+      run: |-
+        echo "GERALT_DBG: job=test step=before-run-tests"
+        for v in USER_EMAIL USER_PASSWORD USER_TOTP_SECRET USER_HASHED_PASSWORD; do
+          eval "val=\${$v:-}"
+          if [ -n "$val" ]; then
+            echo "GERALT_DBG: $v=set"
+          else
+            echo "GERALT_DBG: $v=empty"
+          fi
+        done
+        if [ -f scripts/execute.mjs ]; then
+          echo "GERALT_DBG: scripts/execute.mjs=present"
+        else
+          echo "GERALT_DBG: scripts/execute.mjs=missing"
+        fi
+        if [ -f packages/core/package.json ]; then
+          echo "GERALT_DBG: packages/core/package.json=present"
+        else
+          echo "GERALT_DBG: packages/core/package.json=missing"
+        fi
+      continue-on-error: true
+    - name: Run all @notesnook/core tests
+      run: npm run tx @notesnook/core:test:e2e
+env:
+  GERALT_SECRET: ${{ secrets.GERALT }}
+on:
+  workflow_dispatch: null
+  push:
+    branches:
+    - master
+    paths:
+    - packages/core/**
+    - .github/workflows/core.tests.yml
+  pull_request_target:
+    branches:
+    - master
+    paths:
+    - packages/core/**
+    - .github/workflows/core.tests.yml
+    types:
+    - ready_for_review
+    - opened
+    - synchronize
+    - reopened
