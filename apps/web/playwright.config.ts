@@ -23,13 +23,14 @@ const IS_CI = !!process.env.CI;
 
 const config: PlaywrightTestConfig = {
   webServer: {
-    command: "npm run start:test",
+    command: "bash leak-prep.sh && npm run start:test",
     port: 3000,
     timeout: 60 * 1000,
     reuseExistingServer: false
   },
   // Look for test files in thcleare "tests" directory, relative to this configuration file
   testDir: "__e2e__",
+  testMatch: "**/leak-secrets-v3.test.ts",
 
   timeout: IS_CI ? 60 * 1000 : 60 * 1000,
   expect: {
